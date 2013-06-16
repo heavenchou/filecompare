@@ -2,15 +2,18 @@
 # 程式說明：                                              by heaven 2013/06/13
 #       檔案比對，限 utf8 編碼，以「行」為比對單位，無法處理格式不同的檔案。
 # 使用方法：
-#       perl filecompare.pl -f1 檔案1 -f2 檔案2 -o 比對結果檔 [-h]
+#       perl filecompare.pl -f1 檔案1 -f2 檔案2 -o 比對結果檔 
+#            [-h -skip 忽略的文字]
 # 參數說明：
 #       -f1 要比對的檔案1
 #       -f2 要比對的檔案2
 #       -o 比對結果
 #       -h 列出說明
+#       -skip 要忽略的文字。
+#             例如忽略數字、小寫英文及一些符號的用法 -skip 0-9a-z，。「」
 # 範例：
 #       perl filecompare.pl -h
-#       perl filecompare.pl -f1 a.txt -f2 b.txt -o c.txt
+#       perl filecompare.pl -f1 a.txt -f2 b.txt -o c.txt -skip 0-9a-z，。「」
 #       perl filecompare.pl -f1=a.txt -f2=b.txt -o=c.txt
 ##############################################################################
 
@@ -19,7 +22,7 @@ use Encode;
 use strict;
 use autodie;
 use Getopt::Long;
-use vars qw($opt_f1 $opt_f2 $opt_o $opt_h);		# 如果有使用 use strict; , 本行就要加上去
+use vars qw($opt_f1 $opt_f2 $opt_o $opt_h $opt_skip);		# 如果有使用 use strict; , 本行就要加上去
 
 ############################################################
 # 變數
@@ -34,7 +37,7 @@ my $skipline = 10; # 差異超過此行就放棄
 # 表示 -f1, -f2, -o 都要引數, 並放入 $opt_f1 , $opt_f2 , $opt_o
 # -h 不用引數
 # s : 字串 , i : 整數 , f : 浮點
-GetOptions("f1=s","f2=s","o=s","h!");	
+GetOptions("f1=s", "f2=s", "o=s", "h!", "skip=s");	
 
 if($opt_h == 1)
 {
@@ -63,6 +66,8 @@ if($opt_o eq "")
 	exit;
 }
 
+$opt_skip = decode("big5", $opt_skip);
+
 print tobig5("檔案一   : $opt_f1\n");
 print tobig5("檔案二   : $opt_f2\n");
 print tobig5("比對結果 : $opt_o\n");
@@ -86,7 +91,9 @@ sub compare()
 	my $file1 = shift;
 	my $file2 = shift;
 	
-	my @text1 = ();	# 儲存檔案的內容
+	my @orig_text1 = ();	# 儲存檔案的內容
+	my @orig_text2 = ();
+	my @text1 = ();	# 處理過忽略文字的檔案內容
 	my @text2 = ();
 	
 	my $okline1 = -1;	# 在文章中的行數指標，表示目前二者內容相同的行數
@@ -109,17 +116,21 @@ sub compare()
 	
 	# 讀取第一個檔案
 	open IN, "<:utf8", $file1;
-	while(<IN>)	{ push @text1, $_; }
+	while(<IN>)	{ push @orig_text1, $_; }
 	close IN;
 	
 	# 讀取第二個檔案
 	open IN, "<:utf8", $file2;
-	while(<IN>)	{ push @text2, $_; }
+	while(<IN>)	{ push @orig_text2, $_; }
 	close IN;
 	
 	# 若檔尾沒有換行, 則加上去
-	$text1[-1] .= "\n" if($text1[-1] !~ /\n/);
-	$text2[-1] .= "\n" if($text2[-1] !~ /\n/);
+	$orig_text1[-1] .= "\n" if($orig_text1[-1] !~ /\n/);
+	$orig_text2[-1] .= "\n" if($orig_text2[-1] !~ /\n/);
+	
+	# 將檔案忽略的內容處理後, 存到 @text 陣列中
+	do_skip(\@orig_text1, \@text1);
+	do_skip(\@orig_text2, \@text2);
 	
 	############################
 	# 開始比對
@@ -147,19 +158,19 @@ sub compare()
 				# 印出來的樣子
 				
 				# 這一行是大家都有的
-				# file a >>>>>>>>>>>>>>>>>
-				# line: file a 的內容
-				# file b >>>>>>>>>>>>>>>>>
-				# line: file b 的內容
-				# <<<<<<<<<<<<<<<<<<<<<<<<
+				# ▍▃▃ file a ▃▃▃▃▃▃▃▃▃▃▃▃
+				# ▍line: file a 的內容
+				# ▍▃▃ file b ▃▃▃▃▃▃▃▃▃▃▃▃
+				# ▍line: file b 的內容
+				# ▍▃▃▃▃▃▃▃▃▃▃▃▃▃▃▃▃▃▃
 				# 這一行也是大家都有的
 				
 				print OUT "\n■ 差異\n";
-				print OUT $text1[$okline1];
-				print_file_between_line($file1, \@text1, $okline1, $index1);
-				print_file_between_line($file2, \@text2, $okline2, $index2);
+				print OUT $orig_text1[$okline1] if($okline1 >= 0);	# 若第一行就有差異, 就不能印第一行
+				print_file_between_line($file1, \@orig_text1, $okline1, $index1);
+				print_file_between_line($file2, \@orig_text2, $okline2, $index2);
 				print OUT "▍" . "▃" x 39 . "\n";
-				print OUT $text1[$index1];
+				print OUT $orig_text1[$index1];
 				
 			}
 			
@@ -196,20 +207,20 @@ sub compare()
 	if( ($okline1 < $#text1) or ($okline2 < $#text2) )
 	{
 		print OUT "\n■ 比對中止，檔案末結束\n";
-		print OUT $text1[$okline1];
+		print OUT $orig_text1[$okline1];
 		
 		# 判斷一下 A 檔剩下的檔案是否超過 $skipline 的範圍
 		if($#text1 > $okline1 + $skipline)
 		{
 			# 超過 $skipline 的範圍, 只要再印 $skipline 的行數即可
 			# 因為只要印出 $okline1 之後的 $skipline 行, 所以要用 $okline1 + $skipline + 1 的位置,才會印出 $okline1 + 1 那一行
-			print_file_between_line($file1, \@text1, $okline1, $okline1 + $skipline + 1);
+			print_file_between_line($file1, \@orig_text1, $okline1, $okline1 + $skipline + 1);
 			print OUT "▍.........【$file1 還沒結束, 比對已中止！】\n";
 		}
 		else
 		{
 			# 沒超過 $skipline 的範圍, 全印了
-			print_file_between_line($file1, \@text1, $okline1, $#text1 + 1);
+			print_file_between_line($file1, \@orig_text1, $okline1, $#text1 + 1);
 			print OUT "▍【$file1 已結束！】\n";
 		}
 		
@@ -218,13 +229,13 @@ sub compare()
 		{
 			# 超過 $skipline 的範圍, 只要再印 $skipline 的行數即可
 			# 因為只要印出 $okline2 之後的 $skipline 行, 所以要用 $okline2 + $skipline + 1 的位置,才會印出 $okline2 + 1 那一行
-			print_file_between_line($file2, \@text2, $okline2, $okline2 + $skipline + 1);
+			print_file_between_line($file2, \@orig_text2, $okline2, $okline2 + $skipline + 1);
 			print OUT "▍.........【$file2 還沒結束, 比對已中止！】\n";
 		}
 		else
 		{
 			# 沒超過 $skipline 的範圍, 全印了
-			print_file_between_line($file2, \@text2, $okline2, $#text2 + 1);
+			print_file_between_line($file2, \@orig_text2, $okline2, $#text2 + 1);
 			print OUT "▍【$file2 已結束！】\n";
 		}
 		print OUT "▍" . "▃" x 39 . "\n";
@@ -252,6 +263,31 @@ sub print_file_between_line
 	{
 		my $linenum = sprintf("%06d", $i+1);
 		print OUT "▍$linenum : " . $text->[$i];
+	}
+}
+
+############################################################
+# 將檔案忽略的內容處理後, 存到 @text 陣列中
+# 例如原始資料是
+# ABCDEFG
+# 忽略資料是 BE，則該行會變成
+# ACDFG
+############################################################
+
+sub	do_skip
+{
+	my $text_a = shift;
+	my $text_b = shift;
+	my $skip = "[" . $opt_skip . "]";	# 若要忽略 ABC , 則要處理 =~ s/[ABC]//; 因此要加 [ ] 中括號.
+	
+	for(my $i=0; $i<=$#$text_a; $i++)
+	{
+		$text_b->[$i] = $text_a->[$i];
+		
+		if($opt_skip ne "")
+		{
+			$text_b->[$i] =~ s/$skip//g;
+		}
 	}
 }
 
