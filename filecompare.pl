@@ -1,20 +1,30 @@
 ##############################################################################
 # 程式說明：                                              by heaven 2013/06/13
-#       檔案比對，限 utf8 編碼，以「行」為比對單位，無法處理格式不同的檔案。
+#     檔案比對，限 utf8 編碼，以「行」為比對單位，無法處理格式不同的檔案。
 # 使用方法：
-#       perl filecompare.pl -f1 檔案1 -f2 檔案2 -o 比對結果檔 
-#            [-h -skip 忽略的文字]
+#     perl filecompare.pl -f1 檔案1 -f2 檔案2 -o 比對結果檔 
+#          [-h -skip_item 忽略的項目 -skip 忽略的文字]
 # 參數說明：
-#       -f1 要比對的檔案1
-#       -f2 要比對的檔案2
-#       -o 比對結果
-#       -h 列出說明
-#       -skip 要忽略的文字。
-#             例如忽略數字、小寫英文及一些符號的用法 -skip 0-9a-z，。「」
+#     -f1 要比對的檔案1
+#     -f2 要比對的檔案2
+#     -o 比對結果
+#     -h 列出說明
+#     -skip_item 要忽略的項目
+#        a : (a-z) 忽略小寫英文字母 a-z
+#        A : (A-Z) 忽略大寫英文字母 A-Z
+#        d : (digit) 忽略數字 0-9
+#        h : (head) 忽略行首 T01n0001_p0001a01║
+#        p : (punctuation) 忽略全型新式標點
+#                          ，。、；：！？．—…「」『』（）《》〈〉“”
+#        s : (space) 忽略半型空格
+#        S : (Space) 忽略全部空格 (包含半型空格, 全型空格及 tab )
+#        t : (tag) 忽略 <...> 角括號所包含的範圍
+#     -skip 要忽略的文字。例如要忽略 abc及小括號 -skip abc()
+#        
 # 範例：
-#       perl filecompare.pl -h
-#       perl filecompare.pl -f1 a.txt -f2 b.txt -o c.txt -skip 0-9a-z，。「」
-#       perl filecompare.pl -f1=a.txt -f2=b.txt -o=c.txt
+#     perl filecompare.pl -h
+#     perl filecompare.pl -f1 a.txt -f2 b.txt -o c.txt -skip_item haApS 
+#     perl filecompare.pl -f1=a.txt -f2=b.txt -o=c.txt -skip ，。「」
 ##############################################################################
 
 use utf8;
@@ -22,7 +32,7 @@ use Encode;
 use strict;
 use autodie;
 use Getopt::Long;
-use vars qw($opt_f1 $opt_f2 $opt_o $opt_h $opt_skip);		# 如果有使用 use strict; , 本行就要加上去
+use vars qw($opt_f1 $opt_f2 $opt_o $opt_h $opt_skip $opt_skip_item);		# 如果有使用 use strict; , 本行就要加上去
 
 ############################################################
 # 變數
@@ -37,7 +47,7 @@ my $skipline = 10; # 差異超過此行就放棄
 # 表示 -f1, -f2, -o 都要引數, 並放入 $opt_f1 , $opt_f2 , $opt_o
 # -h 不用引數
 # s : 字串 , i : 整數 , f : 浮點
-GetOptions("f1=s", "f2=s", "o=s", "h!", "skip=s");	
+GetOptions("f1=s", "f2=s", "o=s", "h!", "skip=s", "skip_item=s");	
 
 if($opt_h == 1)
 {
@@ -66,6 +76,7 @@ if($opt_o eq "")
 	exit;
 }
 
+# 要忽略的字是由 big5 環境傳入, 所以要先 decode
 $opt_skip = decode("big5", $opt_skip);
 
 print tobig5("檔案一   : $opt_f1\n");
@@ -278,15 +289,62 @@ sub	do_skip
 {
 	my $text_a = shift;
 	my $text_b = shift;
-	my $skip = "[" . $opt_skip . "]";	# 若要忽略 ABC , 則要處理 =~ s/[ABC]//; 因此要加 [ ] 中括號.
-	
+	my $skip = "[" . "\Q$opt_skip\E" . "]";	# 若要忽略 ABC , 則要處理 =~ s/[ABC]//; 因此要加 [ ] 中括號.
+
 	for(my $i=0; $i<=$#$text_a; $i++)
 	{
 		$text_b->[$i] = $text_a->[$i];
 		
+		# 處理 $opt_skip_item 的項目
+		# 目前有
+		# a (a-z) : 忽略小寫英文字母 a-z
+		# A (A-Z) : 忽略大寫英文字母 A-Z
+		# d (digit) : 忽略數字 0-9
+		# h (head) : 忽略行首 T01n0001_p0001a01║
+		# p (punctuation) : 忽略全型標點，。、；：！？．—…「」『』（）《》〈〉“”
+		# s (space) : 忽略半型空格
+		# S (Space) : 忽略全部空格 (包含半型空格, 全型空格及 tab )
+		# t (tag) : 忽略 <...> 角括號所包含的範圍
+		
+		if($opt_skip_item =~ /a/)
+		{
+			$text_b->[$i] =~ s/[a-z]//g;
+		}
+		if($opt_skip_item =~ /A/)
+		{
+			$text_b->[$i] =~ s/[A-Z]//g;
+		}
+		if($opt_skip_item =~ /d/)
+		{
+			$text_b->[$i] =~ s/\d//g;
+		}
+		if($opt_skip_item =~ /h/)
+		{
+			$text_b->[$i] =~ s/^.*?║//;
+		}
+		if($opt_skip_item =~ /p/)
+		{
+			$text_b->[$i] =~ s/[，。、；：！？．—…「」『』（）《》〈〉“”]//g;
+		}
+		if($opt_skip_item =~ /s/)
+		{
+			$text_b->[$i] =~ s/ //g;
+		}
+		if($opt_skip_item =~ /S/)
+		{
+			$text_b->[$i] =~ s/\s//g;
+			$text_b->[$i] =~ s/　//g;
+		}
+		if($opt_skip_item =~ /t/)
+		{
+			$text_b->[$i] =~ s/<.*?>//g;
+		}
+
+		# 處理忽略的文字
+		
 		if($opt_skip ne "")
 		{
-			$text_b->[$i] =~ s/$skip//g;
+			$text_b->[$i] =~ s/${skip}//g;
 		}
 	}
 }
