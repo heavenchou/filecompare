@@ -3,13 +3,16 @@
 #     檔案比對，限 utf8 編碼，以「行」為比對單位，無法處理格式不同的檔案。
 # 使用方法：
 #     perl filecompare.pl -f1 檔案1 -f2 檔案2 -o 比對結果檔 
-#          [-h -skip_item 忽略的項目 -skip 忽略的文字]
+#          [-h -skip 忽略的文字 -skip_re 忽略的正規式 -skip_item 忽略指定項目]
 # 參數說明：
 #     -f1 要比對的檔案1
 #     -f2 要比對的檔案2
 #     -o 比對結果
 #     -h 列出說明
-#     -skip_item 要忽略的項目
+#     -skip 要忽略的文字。例如要忽略 abc及小括號 -skip abc()
+#     -skip_re 要忽略的正規式。若對正規式不熟，請勿隨意使用。
+#        例如要忽略 a-f 的英文小寫 -skip_re [a-f]
+#     -skip_item 要忽略的指定項目
 #        a : (a-z) 忽略小寫英文字母 a-z
 #        A : (A-Z) 忽略大寫英文字母 A-Z
 #        d : (digit) 忽略數字 0-9
@@ -19,7 +22,6 @@
 #        s : (space) 忽略半型空格
 #        S : (Space) 忽略全部空格 (包含半型空格, 全型空格及 tab )
 #        t : (tag) 忽略 <...> 角括號所包含的範圍
-#     -skip 要忽略的文字。例如要忽略 abc及小括號 -skip abc()
 #        
 # 範例：
 #     perl filecompare.pl -h
@@ -32,7 +34,7 @@ use Encode;
 use strict;
 use autodie;
 use Getopt::Long;
-use vars qw($opt_f1 $opt_f2 $opt_o $opt_h $opt_skip $opt_skip_item);		# 如果有使用 use strict; , 本行就要加上去
+use vars qw($opt_f1 $opt_f2 $opt_o $opt_h $opt_skip $opt_skip_item $opt_skip_re);		# 如果有使用 use strict; , 本行就要加上去
 
 ############################################################
 # 變數
@@ -47,7 +49,7 @@ my $skipline = 10; # 差異超過此行就放棄
 # 表示 -f1, -f2, -o 都要引數, 並放入 $opt_f1 , $opt_f2 , $opt_o
 # -h 不用引數
 # s : 字串 , i : 整數 , f : 浮點
-GetOptions("f1=s", "f2=s", "o=s", "h!", "skip=s", "skip_item=s");	
+GetOptions("f1=s", "f2=s", "o=s", "h!", "skip=s", "skip_item=s", "skip_re=s");	
 
 if($opt_h == 1)
 {
@@ -78,10 +80,11 @@ if($opt_o eq "")
 
 # 要忽略的字是由 big5 環境傳入, 所以要先 decode
 $opt_skip = decode("big5", $opt_skip);
+$opt_skip_re = decode("big5", $opt_skip_re);
 
-print tobig5("檔案一   : $opt_f1\n");
-print tobig5("檔案二   : $opt_f2\n");
-print tobig5("比對結果 : $opt_o\n");
+print tobig5("比對檔案一 : $opt_f1\n");
+print tobig5("比對檔案二 : $opt_f2\n");
+print tobig5("比對結果　 : $opt_o\n");
 
 ############################################################
 # 主程式
@@ -124,7 +127,6 @@ sub compare()
 	#
 	# 原本 $index2=3 , 但與 $index1=3 內容不同, 所以 $index2=4 向下移了一行
 
-	
 	# 讀取第一個檔案
 	open IN, "<:utf8", $file1;
 	while(<IN>)	{ push @orig_text1, $_; }
@@ -182,7 +184,6 @@ sub compare()
 				print_file_between_line($file2, \@orig_text2, $okline2, $index2);
 				print OUT "▍" . "▃" x 39 . "\n";
 				print OUT $orig_text1[$index1];
-				
 			}
 			
 			$okline1 = $index1;
@@ -345,6 +346,13 @@ sub	do_skip
 		if($opt_skip ne "")
 		{
 			$text_b->[$i] =~ s/${skip}//g;
+		}
+		
+		# 處理忽略的正規式
+		
+		if($opt_skip_re ne "")
+		{
+			$text_b->[$i] =~ s/${opt_skip_re}//g;
 		}
 	}
 }
